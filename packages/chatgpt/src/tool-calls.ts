@@ -112,10 +112,23 @@ function scoreCandidate(element: HTMLElement): { score: number; signals: string[
     score += 2
     signals.push('structured descendant')
   }
-  if (element.closest('[data-message-author-role="assistant"], article')) {
+  const inAssistantTurn = Boolean(
+    element.closest('[data-message-author-role="assistant"], article'),
+  )
+  const hasStructuredPayload = Boolean(
+    element.querySelector('pre, code, [data-json], [data-payload]'),
+  )
+  const isSpecificIntegration = /\b(mcp|connector)\b/i.test(metadata)
+
+  if (inAssistantTurn) {
     score += 1
     signals.push('assistant turn')
   }
+
+  if (!inAssistantTurn && !hasStructuredPayload && !isSpecificIntegration) {
+    return { score: 0, signals: [] }
+  }
+
   return { score, signals }
 }
 
