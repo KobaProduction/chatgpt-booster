@@ -17,8 +17,8 @@ import { resolveLocale, translate } from './i18n'
 const props = withDefaults(
   defineProps<{
     settingsAdapter: SettingsAdapter
-    diagnosticsAdapter?: DiagnosticsAdapter
-    secretAdapter?: SecretAdapter
+    diagnosticsAdapter?: DiagnosticsAdapter | undefined
+    secretAdapter?: SecretAdapter | undefined
     target: 'extension' | 'userscript'
     showClose?: boolean
   }>(),

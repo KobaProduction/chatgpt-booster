@@ -12,8 +12,8 @@ export interface MountedBoosterUi {
 
 export interface BoosterUiOptions {
   settingsAdapter: SettingsAdapter
-  diagnosticsAdapter?: DiagnosticsAdapter
-  secretAdapter?: SecretAdapter
+  diagnosticsAdapter?: DiagnosticsAdapter | undefined
+  secretAdapter?: SecretAdapter | undefined
   target: 'extension' | 'userscript'
 }
 
