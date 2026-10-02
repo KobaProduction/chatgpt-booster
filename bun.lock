@@ -18,6 +18,9 @@
     "packages/core": {
       "name": "@chatgpt-booster/core",
       "version": "0.1.0",
+      "devDependencies": {
+        "typescript": "^5.9.2",
+      },
     },
     "packages/extension": {
       "name": "@chatgpt-booster/extension",
