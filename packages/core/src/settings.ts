@@ -1,3 +1,13 @@
+import {
+  type ArchiveExportOptions,
+  type ArchiveSettings,
+  type CaptureRule,
+  DEFAULT_CAPTURE_RULE,
+  DEFAULT_EXPORT_OPTIONS,
+  normalizeCaptureRule,
+  normalizeExportOptions,
+} from './archive'
+import { clampRatio, type DockSide } from './docking'
 export interface FeatureSettings {
   toolInspector: boolean
 }
@@ -5,10 +15,12 @@ export interface FeatureSettings {
 export interface LauncherSettings {
   x: number | null
   y: number | null
+  side: DockSide
+  heightRatio: number
 }
 
 export type LanguagePreference = 'auto' | 'en' | 'ru'
-export type SettingsSection = 'modules' | 'analytics' | 'other'
+export type SettingsSection = 'modules' | 'analytics' | 'other' | 'archive'
 
 export interface ObserverSettings {
   enabled: boolean
@@ -35,6 +47,8 @@ export interface BoosterSettings {
   observer: ObserverSettings
   telemetry: TelemetrySettings
   ui: UiSettings
+  archive: ArchiveSettings
+  export: ArchiveExportOptions
 }
 
 export interface BoosterSettingsPatch {
@@ -46,9 +60,15 @@ export interface BoosterSettingsPatch {
   observer?: Partial<ObserverSettings>
   telemetry?: Partial<TelemetrySettings>
   ui?: Partial<UiSettings>
+  archive?: {
+    defaultRule?: Partial<CaptureRule>
+    projects?: Record<string, CaptureRule | null>
+    conversations?: Record<string, CaptureRule | null>
+  }
+  export?: Partial<ArchiveExportOptions>
 }
 
-export const SETTINGS_SCHEMA_VERSION = 2
+export const SETTINGS_SCHEMA_VERSION = 3
 
 export const DEFAULT_SETTINGS: BoosterSettings = {
   schemaVersion: SETTINGS_SCHEMA_VERSION,
@@ -60,6 +80,8 @@ export const DEFAULT_SETTINGS: BoosterSettings = {
   launcher: {
     x: null,
     y: null,
+    side: 'right',
+    heightRatio: 0.65,
   },
   observer: {
     enabled: true,
@@ -70,6 +92,8 @@ export const DEFAULT_SETTINGS: BoosterSettings = {
     enabled: false,
     endpoint: '',
   },
+  archive: { defaultRule: { ...DEFAULT_CAPTURE_RULE }, projects: {}, conversations: {} },
+  export: { ...DEFAULT_EXPORT_OPTIONS },
   ui: {
     activeSection: 'modules',
     telemetryExpanded: true,
@@ -89,7 +113,18 @@ export function normalizeSettings(value?: Partial<BoosterSettings>): BoosterSett
     },
     launcher: {
       ...DEFAULT_SETTINGS.launcher,
-      ...value?.launcher,
+      // Schema < 3 stored absolute viewport pixels. They are resolution-specific,
+      // so migration intentionally discards them instead of pretending they are portable.
+      x: null,
+      y: null,
+      side:
+        incomingSchema >= 3 && value?.launcher?.side === 'left'
+          ? 'left'
+          : DEFAULT_SETTINGS.launcher.side,
+      heightRatio:
+        incomingSchema >= 3
+          ? clampRatio(value?.launcher?.heightRatio)
+          : DEFAULT_SETTINGS.launcher.heightRatio,
     },
     observer: {
       ...DEFAULT_SETTINGS.observer,
@@ -99,10 +134,16 @@ export function normalizeSettings(value?: Partial<BoosterSettings>): BoosterSett
       ...DEFAULT_SETTINGS.telemetry,
       ...value?.telemetry,
       endpoint:
-        incomingSchema < SETTINGS_SCHEMA_VERSION
+        incomingSchema < 2
           ? DEFAULT_SETTINGS.telemetry.endpoint
           : (value?.telemetry?.endpoint ?? DEFAULT_SETTINGS.telemetry.endpoint),
     },
+    archive: {
+      defaultRule: normalizeCaptureRule(value?.archive?.defaultRule),
+      projects: mergeCaptureRules({}, value?.archive?.projects),
+      conversations: mergeCaptureRules({}, value?.archive?.conversations),
+    },
+    export: normalizeExportOptions(value?.export),
     ui: {
       ...DEFAULT_SETTINGS.ui,
       ...value?.ui,
@@ -124,6 +165,8 @@ export function snapshotSettings(
     launcher: {
       x: normalized.launcher.x,
       y: normalized.launcher.y,
+      side: normalized.launcher.side,
+      heightRatio: normalized.launcher.heightRatio,
     },
     observer: {
       enabled: normalized.observer.enabled,
@@ -134,6 +177,16 @@ export function snapshotSettings(
       enabled: normalized.telemetry.enabled,
       endpoint: normalized.telemetry.endpoint,
     },
+    archive: {
+      defaultRule: { ...normalized.archive.defaultRule },
+      projects: Object.fromEntries(
+        Object.entries(normalized.archive.projects).map(([id, rule]) => [id, { ...rule }]),
+      ),
+      conversations: Object.fromEntries(
+        Object.entries(normalized.archive.conversations).map(([id, rule]) => [id, { ...rule }]),
+      ),
+    },
+    export: { ...normalized.export },
     ui: {
       activeSection: normalized.ui.activeSection,
       telemetryExpanded: normalized.ui.telemetryExpanded,
@@ -165,6 +218,15 @@ export function mergeSettings(
       ...normalized.telemetry,
       ...patch.telemetry,
     },
+    archive: {
+      defaultRule: { ...normalized.archive.defaultRule, ...patch.archive?.defaultRule },
+      projects: mergeCaptureRules(normalized.archive.projects, patch.archive?.projects),
+      conversations: mergeCaptureRules(
+        normalized.archive.conversations,
+        patch.archive?.conversations,
+      ),
+    },
+    export: { ...normalized.export, ...patch.export },
     ui: {
       ...normalized.ui,
       ...patch.ui,
@@ -185,3 +247,15 @@ export interface SettingsAdapter {
 }
 
 export const OPEN_SETTINGS_EVENT = 'chatgpt-booster:open-settings'
+
+function mergeCaptureRules(
+  current: Record<string, CaptureRule>,
+  patch?: Record<string, CaptureRule | null>,
+): Record<string, CaptureRule> {
+  const entries = new Map(Object.entries(current))
+  for (const [id, rule] of Object.entries(patch ?? {})) {
+    if (rule === null) entries.delete(id)
+    else if (rule && typeof rule === 'object') entries.set(id, normalizeCaptureRule(rule))
+  }
+  return Object.fromEntries(entries)
+}
